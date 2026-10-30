@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<style>
+  /* Everything is sized in "u" = 1% of the box height, so it scales to any tablet. */
+  :root { --u: 1vh; }
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; height: 100%; }
+  body {
+    font-family: Roboto, "Helvetica Neue", Arial, sans-serif; color: #fff;
+    -webkit-user-select: none; user-select: none;
+    text-shadow: 0 calc(.5 * var(--u)) calc(1.5 * var(--u)) rgba(0,0,0,.8);
+  }
+  #box { padding: calc(4.8 * var(--u)) calc(6.7 * var(--u)); box-sizing: border-box; height: 100%; overflow: hidden; }
+  .row { display: flex; align-items: center; }
+  #bigIcon { width: calc(38 * var(--u)); flex: none; margin-right: calc(4.8 * var(--u)); }
+  #bigT { font-size: calc(28.7 * var(--u)); font-weight: 500; color: #FAC775; line-height: 1;
+          letter-spacing: calc(-1 * var(--u)); margin-right: calc(4.8 * var(--u)); white-space: nowrap; }
+  .side { font-size: calc(6.2 * var(--u)); line-height: 1.45; min-width: 0; }
+  .range { font-size: calc(10.5 * var(--u)); line-height: 1.15; margin-bottom: calc(1 * var(--u)); white-space: nowrap; }
+  #hi { color: #fff; font-weight: 500; }
+  #lo { color: #B4B2A9; }
+  #cond { color: #D3D1C7; white-space: nowrap; }
+  #wind { color: #85B7EB; white-space: nowrap; }
+  #wind svg { width: calc(6.7 * var(--u)); height: calc(6.7 * var(--u)); vertical-align: calc(-1.2 * var(--u)); margin-right: calc(1.2 * var(--u)); }
+  #hours { display: flex; flex-wrap: nowrap; margin-top: calc(2.9 * var(--u)); }
+  .hr { display: flex; align-items: center; font-size: calc(5.3 * var(--u)); color: #B4B2A9;
+        margin-right: calc(3.3 * var(--u)); line-height: 1; }
+  .hr i { display: block; width: calc(5.7 * var(--u)); margin-left: calc(1 * var(--u)); }
+  .daterow { display: flex; align-items: center; margin: calc(2.9 * var(--u)) 0 calc(1.4 * var(--u)); }
+  #today { font-size: calc(5.7 * var(--u)); color: #D3D1C7; white-space: nowrap; margin-right: calc(3.8 * var(--u)); }
+  .line { flex: 1; height: 1px; background: rgba(255,255,255,.25); }
+  .ev { display: flex; font-size: calc(6.2 * var(--u)); line-height: 1.45; white-space: nowrap; }
+  .ev .tm { width: calc(25 * var(--u)); flex: none; color: #D3D1C7; }
+  .ev .tt { overflow: hidden; text-overflow: ellipsis; color: #fff; }
+  .ev.soon .tm, .ev.soon .tt { color: #FAC775; }
+  .ev .dot { display: inline-block; width: calc(2.9 * var(--u)); height: calc(2.9 * var(--u)); border-radius: 50%;
+             background: #FAC775; margin-right: calc(1.9 * var(--u)); vertical-align: calc(.5 * var(--u)); }
+  .muted { color: #B4B2A9 !important; }
+</style>
+</head>
+<body>
+<div id="box">
+  <div class="row">
+    <div id="bigIcon"></div>
+    <div id="bigT">--°</div>
+    <div class="side">
+      <div class="range"><span id="hi"></span><span id="lo"></span></div>
+      <div id="cond">Loading weather…</div>
+      <div id="uv"></div>
+      <div id="wind"></div>
+    </div>
+  </div>
+  <div id="hours"></div>
+  <div class="daterow"><span id="today"></span><span class="line"></span></div>
+  <div id="events"></div>
+</div>
+
+<script>
+/* ---------------- icons ---------------- */
+var CL = '<path d="M18 50h30a11 11 0 0 0 1-22 15 15 0 0 0-29-3 12 12 0 0 0-2 25z" fill="FILL"/>';
+function cloud(f) { return CL.replace('FILL', f || '#F1EFE8'); }
+function sun() {
+  var r = '';
+  for (var i = 0; i < 8; i++) {
+    var a = i * Math.PI / 4;
+    r += '<line x1="' + (32 + Math.cos(a) * 18).toFixed(1) + '" y1="' + (32 + Math.sin(a) * 18).toFixed(1) +
+         '" x2="' + (32 + Math.cos(a) * 25).toFixed(1) + '" y2="' + (32 + Math.sin(a) * 25).toFixed(1) +
+         '" stroke="#EF9F27" stroke-width="4" stroke-linecap="round"/>';
+  }
+  return r + '<circle cx="32" cy="32" r="12" fill="#FAC775"/>';
+}
+function moon() { return '<path d="M38 10a22 22 0 1 0 18 34A18 18 0 0 1 38 10z" fill="#FAEEDA"/>'; }
+function g(t, s) { return '<g transform="' + t + '">' + s + '</g>'; }
+var ICONS = {
+  sun: sun(),
+  partly: g('translate(-6,-8) scale(.85)', sun()) + g('translate(4,6) scale(.9)', cloud()),
+  cloud: g('translate(-4,-6) scale(.8)', cloud('#B4B2A9')) + g('translate(4,4)', cloud()),
+  rain: g('translate(0,-8)', cloud()) + '<g stroke="#85B7EB" stroke-width="3.5" stroke-linecap="round"><line x1="24" y1="48" x2="20" y2="58"/><line x1="34" y1="48" x2="30" y2="58"/><line x1="44" y1="48" x2="40" y2="58"/></g>',
+  storm: g('translate(0,-8)', cloud('#888780')) + '<polygon points="34,40 24,54 32,54 28,63 42,48 34,48 38,40" fill="#EF9F27"/>',
+  snow: g('translate(0,-8)', cloud()) + '<g fill="#E6F1FB"><circle cx="22" cy="52" r="3"/><circle cx="33" cy="56" r="3"/><circle cx="44" cy="52" r="3"/></g>',
+  fog: '<g stroke="#D3D1C7" stroke-width="4" stroke-linecap="round"><line x1="12" y1="22" x2="52" y2="22"/><line x1="8" y1="32" x2="46" y2="32"/><line x1="16" y1="42" x2="56" y2="42"/><line x1="12" y1="52" x2="44" y2="52"/></g>',
+  night: moon(),
+  nightcloud: g('translate(-8,-10) scale(.8)', moon()) + g('translate(4,6) scale(.9)', cloud())
+};
+function svg(k) { return '<svg viewBox="0 0 64 64" width="100%" style="display:block;overflow:visible">' + (ICONS[k] || '') + '</svg>'; }
+var WIND_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#85B7EB" stroke-width="2.2" stroke-linecap="round"><path d="M3 8h10a3 3 0 1 0-3-3"/><path d="M3 12h15a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg>';
+
+/* WMO weather code -> [icon, label] */
+function wx(code, isDay) {
+  var day = isDay !== 0;
+  if (code === 0) return [day ? 'sun' : 'night', day ? 'Sunny' : 'Clear'];
+  if (code === 1) return [day ? 'sun' : 'night', 'Mostly clear'];
+  if (code === 2) return [day ? 'partly' : 'nightcloud', 'Partly cloudy'];
+  if (code === 3) return ['cloud', 'Cloudy'];
+  if (code === 45 || code === 48) return ['fog', 'Fog'];
+  if (code >= 51 && code <= 55) return ['rain', 'Drizzle'];
+  if (code === 56 || code === 57) return ['rain', 'Freezing drizzle'];
+  if (code >= 61 && code <= 65) return ['rain', code === 65 ? 'Heavy rain' : 'Rain'];
+  if (code === 66 || code === 67) return ['rain', 'Freezing rain'];
+  if (code >= 71 && code <= 77) return ['snow', code === 75 ? 'Heavy snow' : 'Snow'];
+  if (code >= 80 && code <= 82) return ['rain', 'Showers'];
+  if (code === 85 || code === 86) return ['snow', 'Snow showers'];
+  if (code >= 95) return ['storm', 'Thunderstorm'];
+  return ['cloud', ''];
+}
+function uvInfo(u) {
+  if (u <= 2) return ['Low', '#97C459'];
+  if (u <= 5) return ['Moderate', '#FAC775'];
+  if (u <= 7) return ['High', '#EF9F27'];
+  if (u <= 10) return ['Very high', '#F09595'];
+  return ['Extreme', '#AFA9EC'];
+}
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function deg(v) { return (v == null || isNaN(v)) ? '--' : Math.round(v) + '°'; }
+
+/* ---------------- weather ---------------- */
+function setWeather(d) {
+  try {
+    var c = d.current, w = wx(c.weather_code, c.is_day);
+    $('bigIcon').innerHTML = svg(w[0]);
+    $('bigT').textContent = deg(c.temperature_2m);
+    $('hi').textContent = deg(d.daily.temperature_2m_max[0]);
+    $('lo').textContent = ' / ' + deg(d.daily.temperature_2m_min[0]);
+    $('cond').textContent = w[1];
+
+    if (c.is_day === 1 && c.uv_index != null) {
+      var uv = Math.round(c.uv_index), ui = uvInfo(uv);
+      $('uv').innerHTML = '<span style="color:#D3D1C7">UV </span><span style="color:' + ui[1] + '">' + uv + ' ' + ui[0] + '</span>';
+    } else {
+      $('uv').innerHTML = '';
+    }
+
+    var ws = c.wind_speed_10m || 0, gu = c.wind_gusts_10m || 0;
+    $('wind').innerHTML = (ws >= 30 || gu >= 45)
+      ? WIND_SVG + 'Windy ' + Math.round(ws) + ' km/h · gusts ' + Math.round(gu) : '';
+
+    // next 7 hours, starting after the current hour
+    var h = d.hourly, cur = String(c.time).substr(0, 13), start = 0;
+    for (var i = 0; i < h.time.length; i++) { if (h.time[i].substr(0, 13) >= cur) { start = i; break; } }
+    var html = '', prevAp = '';
+    for (var j = start + 1; j <= start + 7 && j < h.time.length; j++) {
+      var hr = parseInt(h.time[j].substr(11, 2), 10), ap = hr >= 12 ? 'p' : 'a', h12 = hr % 12 || 12;
+      var label = h12 + (ap !== prevAp ? ap : '');
+      prevAp = ap;
+      html += '<div class="hr">' + label + '<i>' + svg(wx(h.weather_code[j], h.is_day[j])[0]) + '</i></div>';
+    }
+    $('hours').innerHTML = html;
+  } catch (e) { /* keep what is on screen */ }
+}
+
+/* ---------------- calendar ---------------- */
+var CAL = { enabled: false, events: [] };
+var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+var DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function setEvents(p) { CAL = p || CAL; renderEvents(); }
+
+function tfmt(ms) {
+  var d = new Date(ms), h = d.getHours(), m = d.getMinutes();
+  return (h % 12 || 12) + ':' + (m < 10 ? '0' : '') + m + (h >= 12 ? 'p' : 'a');
+}
+
+function dayBounds(offset) {
+  var d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + offset);
+  var e = new Date(d.getTime()); e.setDate(e.getDate() + 1);
+  return [d.getTime(), e.getTime()];
+}
+
+function pick(events, b, now) {
+  var allDay = [], timed = [];
+  events.forEach(function (ev) {
+    if (ev.a) { if (ev.s < b[1] && ev.e > b[0]) allDay.push(ev); }
+    else if (ev.s < b[1] && (ev.e > now || (ev.e === ev.s && ev.s >= now)) && ev.e > b[0]) timed.push(ev);
+  });
+  timed.sort(function (x, y) { return x.s - y.s; });
+  return allDay.concat(timed);
+}
+
+function renderEvents() {
+  var now = Date.now(), d = new Date();
+  $('today').textContent = d.getDate() + ' ' + MON[d.getMonth()] + ' ' + DAY[d.getDay()];
+  if (!CAL.enabled) { $('events').innerHTML = ''; return; }
+
+  // de-duplicate (same title + start) in case two calendars share an event
+  var seen = {}, evs = [];
+  (CAL.events || []).forEach(function (e) { var k = e.t + '|' + e.s; if (!seen[k]) { seen[k] = 1; evs.push(e); } });
+
+  var html = '', today = pick(evs, dayBounds(0), now).slice(0, 3);
+  if (today.length) {
+    today.forEach(function (e) {
+      if (e.a) { html += row('All day', e.t, false); return; }
+      var mins = Math.round((e.s - now) / 60000);
+      if (e.s <= now) html += row('Now', e.t, true);
+      else if (mins <= 30) html += row(tfmt(e.s), e.t + ' · in ' + mins + ' min', true);
+      else html += row(tfmt(e.s), e.t, false);
+    });
+  } else {
+    html += '<div class="ev"><span class="tt muted">No more events today</span></div>';
+    pick(evs, dayBounds(1), 0).slice(0, 2).forEach(function (e) {
+      html += row('Tmrw', (e.a ? '' : tfmt(e.s) + ' ') + e.t, false);
+    });
+  }
+  $('events').innerHTML = html;
+}
+
+function row(tm, title, soon) {
+  return '<div class="ev' + (soon ? ' soon' : '') + '"><span class="tm">' + (soon ? '<span class="dot"></span>' : '') +
+         esc(tm) + '</span><span class="tt">' + esc(title) + '</span></div>';
+}
+
+renderEvents();
+setInterval(renderEvents, 30000);
+</script>
+</body>
+</html>
