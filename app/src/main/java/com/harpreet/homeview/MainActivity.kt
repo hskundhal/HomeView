@@ -141,7 +141,7 @@ class MainActivity : Activity() {
             val t = tiles[i]
             t.visibility = View.VISIBLE
             t.setFullScreen(false)
-            t.play(cams.getOrNull(i)?.url(main = false))
+            t.play(cams.getOrNull(i)?.candidateUrls(main = false) ?: emptyList())
         }
     }
 
@@ -151,7 +151,7 @@ class MainActivity : Activity() {
             if (k == i) {
                 t.visibility = View.VISIBLE
                 t.setFullScreen(true)
-                t.play(cams.getOrNull(k)?.url(main = true))
+                t.play(cams.getOrNull(k)?.candidateUrls(main = true) ?: emptyList())
             } else {
                 t.stop()
                 t.visibility = View.GONE

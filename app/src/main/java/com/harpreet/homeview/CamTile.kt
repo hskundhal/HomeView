@@ -2,6 +2,7 @@ package com.harpreet.homeview
 
 import android.content.Context
 import android.graphics.Color
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -13,35 +14,29 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.rtsp.RtspMediaSource
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
+import org.videolan.libvlc.MediaPlayer
+import org.videolan.libvlc.util.VLCVideoLayout
 
-/** One camera square: live RTSP video + name + LIVE/offline label. */
+/** One camera square: live RTSP video (H.265/H.264 supported via LibVLC) + name + LIVE/offline label. */
 class CamTile(context: Context) : FrameLayout(context) {
 
-    private val playerView = PlayerView(context)
+    private val videoLayout = VLCVideoLayout(context)
     private val nameView = TextView(context)
     private val statusView = TextView(context)
     private val handler = Handler(Looper.getMainLooper())
 
-    private var player: ExoPlayer? = null
-    private var url: String? = null
+    private var libVlc: LibVLC? = null
+    private var mediaPlayer: MediaPlayer? = null
+    private var candidateUrls = emptyList<String>()
+    private var currentUrlIndex = 0
     private var waitingSince = 0L
+    private var isPlayingReady = false
 
     init {
         setBackgroundColor(BG)
-        playerView.setUseController(false)
-        playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
-        playerView.setShutterBackgroundColor(BG)
-        playerView.setKeepContentOnPlayerReset(true)
-        addView(playerView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        addView(videoLayout, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
         for (tv in listOf(nameView, statusView)) {
             tv.setTextColor(Color.parseColor("#F1EFE8"))
@@ -55,112 +50,126 @@ class CamTile(context: Context) : FrameLayout(context) {
             Gravity.BOTTOM or Gravity.END).apply { setMargins(m, 0, m, m) })
     }
 
-    // The tile handles all taps itself (tap = full screen, long-press = settings).
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean = true
 
     fun setName(name: String) { nameView.text = name }
 
-    fun setFullScreen(full: Boolean) {
-        playerView.setResizeMode(
-            if (full) AspectRatioFrameLayout.RESIZE_MODE_FIT else AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-        )
-    }
+    fun setFullScreen(full: Boolean) {}
 
-    /** Start (or keep) playing this link. null = camera not set up. */
-    fun play(newUrl: String?) {
-        if (newUrl == url && player != null) return
+    fun play(urls: List<String>) {
+        android.util.Log.d("CamTile", "play() urls=$urls")
+        if (urls == candidateUrls && mediaPlayer?.isPlaying == true) return
         stop()
-        url = newUrl
-        if (newUrl == null) {
+        candidateUrls = urls
+        currentUrlIndex = 0
+        if (urls.isEmpty()) {
             setStatus("Long-press to set up", "#B4B2A9")
             return
         }
-        start()
+        startCurrent()
     }
 
     fun stop() {
         handler.removeCallbacks(retry)
         releasePlayer()
-        url = null
+        candidateUrls = emptyList()
+        currentUrlIndex = 0
+        isPlayingReady = false
     }
 
-    /** Called every few seconds: restart a stream that is stuck connecting. */
     fun watchdog() {
-        if (url != null && waitingSince != 0L && SystemClock.elapsedRealtime() - waitingSince > 20_000) {
-            restart()
+        if (candidateUrls.isNotEmpty() && !isPlayingReady && waitingSince != 0L && SystemClock.elapsedRealtime() - waitingSince > 15_000) {
+            nextUrlOrRetry()
         }
     }
 
-    private fun start() {
-        val u = url ?: return
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(500, 2000, 250, 250)
-            .build()
-        val p = ExoPlayer.Builder(context).setLoadControl(loadControl).build()
-        p.volume = 0f
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-            .build()
-        p.addListener(listener)
-        val source = RtspMediaSource.Factory()
-            .setForceUseRtpTcp(true)
-            .setTimeoutMs(10_000)
-            .createMediaSource(MediaItem.fromUri(u))
-        p.setMediaSource(source)
-        p.playWhenReady = true
-        p.prepare()
-        playerView.player = p
-        player = p
-        waitingSince = SystemClock.elapsedRealtime()
-        setStatus("Connecting…", "#D3D1C7")
+    private fun startCurrent() {
+        if (candidateUrls.isEmpty()) return
+        val u = candidateUrls[currentUrlIndex]
+        android.util.Log.d("CamTile", "startCurrent() trying url[$currentUrlIndex/${candidateUrls.size}]: $u")
+
+        val options = ArrayList<String>().apply {
+            add("--rtsp-tcp")
+            add("--avcodec-hw=any")
+            add("--no-audio")
+            add("--network-caching=500")
+            add("--rtsp-caching=500")
+        }
+
+        try {
+            val vlc = LibVLC(context, options)
+            libVlc = vlc
+            val mp = MediaPlayer(vlc)
+            mediaPlayer = mp
+
+            mp.setEventListener(object : MediaPlayer.EventListener {
+                override fun onEvent(event: MediaPlayer.Event) {
+                    when (event.type) {
+                        MediaPlayer.Event.Playing -> {
+                            handler.post {
+                                isPlayingReady = true
+                                waitingSince = 0L
+                                setLive()
+                            }
+                        }
+                        MediaPlayer.Event.EncounteredError, MediaPlayer.Event.EndReached -> {
+                            handler.post {
+                                android.util.Log.e("CamTile", "LibVLC error/end event: ${event.type}")
+                                setStatus("Offline · retrying", "#F09595")
+                                nextUrlOrRetry()
+                            }
+                        }
+                        else -> {}
+                    }
+                }
+            })
+
+            mp.attachViews(videoLayout, null, false, false)
+            val media = Media(vlc, Uri.parse(u))
+            media.setHWDecoderEnabled(true, false)
+            mp.media = media
+            media.release()
+            mp.play()
+
+            waitingSince = SystemClock.elapsedRealtime()
+            isPlayingReady = false
+            setStatus("Connecting…", "#D3D1C7")
+        } catch (e: Exception) {
+            android.util.Log.e("CamTile", "Exception starting LibVLC", e)
+            nextUrlOrRetry()
+        }
     }
 
-    private fun restart() {
+    private fun nextUrlOrRetry() {
+        if (candidateUrls.isEmpty()) return
+        currentUrlIndex = (currentUrlIndex + 1) % candidateUrls.size
+        android.util.Log.d("CamTile", "Switching to next candidate URL index $currentUrlIndex: ${candidateUrls[currentUrlIndex]}")
         handler.removeCallbacks(retry)
         releasePlayer()
-        start()
+        startCurrent()
     }
 
     private fun releasePlayer() {
-        playerView.player = null
-        player?.let {
-            it.removeListener(listener)
-            it.release()
-        }
-        player = null
+        try {
+            mediaPlayer?.stop()
+            mediaPlayer?.detachViews()
+            mediaPlayer?.release()
+        } catch (e: Exception) {}
+        mediaPlayer = null
+
+        try {
+            libVlc?.release()
+        } catch (e: Exception) {}
+        libVlc = null
+
         waitingSince = 0L
     }
 
-    private val retry = Runnable { if (url != null) restart() }
+    private val retry = Runnable { if (candidateUrls.isNotEmpty()) nextUrlOrRetry() }
 
     private fun retrySoon() {
         handler.removeCallbacks(retry)
         handler.postDelayed(retry, 5_000)
-    }
-
-    private val listener = object : Player.Listener {
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            when (playbackState) {
-                Player.STATE_READY -> {
-                    waitingSince = 0L
-                    setLive()
-                }
-                Player.STATE_BUFFERING -> {
-                    if (waitingSince == 0L) waitingSince = SystemClock.elapsedRealtime()
-                    setStatus("Connecting…", "#D3D1C7")
-                }
-                Player.STATE_ENDED -> {
-                    setStatus("Offline · retrying", "#F09595")
-                    retrySoon()
-                }
-                else -> {}
-            }
-        }
-
-        override fun onPlayerError(error: PlaybackException) {
-            setStatus("Offline · retrying", "#F09595")
-            retrySoon()
-        }
     }
 
     private fun setStatus(text: String, color: String) {

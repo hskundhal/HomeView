@@ -24,28 +24,54 @@ object Prefs {
 
         /** RTSP link for this camera. main = HD stream (full screen), otherwise low-res stream (grid). */
         fun url(main: Boolean): String? {
-            if (!configured) return null
+            val list = candidateUrls(main)
+            return list.firstOrNull()
+        }
+
+        fun candidateUrls(main: Boolean): List<String> {
+            if (!configured) return emptyList()
             val h = host.trim()
-            if (h.startsWith("rtsp://", ignoreCase = true)) return h   // user pasted a full link
+            if (h.startsWith("rtsp://", ignoreCase = true)) return listOf(h)
             val auth = if (user.isNotBlank()) Uri.encode(user.trim()) + ":" + Uri.encode(pass) + "@" else ""
-            var path = (if (main) mainPath else subPath).trim()
-            if (path.isEmpty()) path = if (main) "/11" else "/12"
-            if (!path.startsWith("/")) path = "/$path"
             val p = port.trim().ifEmpty { "554" }
-            return "rtsp://$auth$h:$p$path"
+
+            val primaryPath = (if (main) mainPath else subPath).trim()
+            val defaultMainFallback = listOf("/live/ch0", "/11", "/stream1", "/onvif1", "/h264Preview_01_main", "/cam/realmonitor?channel=1&subtype=0")
+            val defaultSubFallback = listOf("/live/ch1", "/12", "/stream2", "/onvif2", "/h264Preview_01_sub", "/cam/realmonitor?channel=1&subtype=1")
+
+            val defaults = if (main) defaultMainFallback else defaultSubFallback
+            val paths = LinkedHashSet<String>()
+            if (primaryPath.isNotEmpty()) paths.add(if (primaryPath.startsWith("/")) primaryPath else "/$primaryPath")
+            paths.addAll(defaults)
+
+            return paths.map { path -> "rtsp://$auth$h:$p$path" }
         }
     }
 
     fun cam(c: Context, i: Int): Cam {
         val s = sp(c)
+        val defaultHost = when (i) {
+            0 -> "10.0.0.173"
+            1 -> "10.0.0.209"
+            else -> ""
+        }
+        var h = s.getString("cam${i}_host", defaultHost) ?: defaultHost
+        if (i == 0 && (h.isBlank() || h == "10.0.0.73" || h == "localhost" || h == "127.0.0.1")) h = "10.0.0.173"
+        if (i == 1 && (h.isBlank() || h == "localhost" || h == "127.0.0.1")) h = "10.0.0.209"
+        var main = s.getString("cam${i}_main", if (i == 0 || i == 1) "/live/ch0" else "/11") ?: if (i == 0 || i == 1) "/live/ch0" else "/11"
+        if ((i == 0 || i == 1) && (main.isBlank() || main == "/11")) main = "/live/ch0"
+
+        var sub = s.getString("cam${i}_sub", if (i == 0 || i == 1) "/live/ch1" else "/12") ?: if (i == 0 || i == 1) "/live/ch1" else "/12"
+        if ((i == 0 || i == 1) && (sub.isBlank() || sub == "/12")) sub = "/live/ch1"
+
         return Cam(
             name = s.getString("cam${i}_name", null) ?: "Camera ${i + 1}",
-            host = s.getString("cam${i}_host", "") ?: "",
+            host = h,
             port = s.getString("cam${i}_port", "554") ?: "554",
             user = s.getString("cam${i}_user", "admin") ?: "admin",
             pass = s.getString("cam${i}_pass", "") ?: "",
-            mainPath = s.getString("cam${i}_main", "/11") ?: "/11",
-            subPath = s.getString("cam${i}_sub", "/12") ?: "/12"
+            mainPath = main,
+            subPath = sub
         )
     }
 

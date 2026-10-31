@@ -46,5 +46,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-exoplayer-rtsp:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+    implementation("org.videolan.android:libvlc-all:3.5.1")
     implementation("net.sf.biweekly:biweekly:0.6.7")
 }

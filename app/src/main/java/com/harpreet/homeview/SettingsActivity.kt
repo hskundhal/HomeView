@@ -38,10 +38,36 @@ class SettingsActivity : Activity() {
 
         note("Tip: long-press any camera (or the weather box) to come back here.")
 
+        val topBtnLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, dp(4))
+        }
+        val topSave = Button(this).apply {
+            text = "Save"
+            setAllCaps(false)
+            setTextColor(Color.parseColor("#FAC775"))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { save() }
+        }
+        val topCancel = Button(this).apply {
+            text = "Cancel"
+            setAllCaps(false)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { finish() }
+        }
+        topBtnLayout.addView(topSave)
+        topBtnLayout.addView(topCancel)
+        col.addView(topBtnLayout)
+
         for (i in 0 until 4) {
             header("Camera ${i + 1}")
             field("cam${i}_name", "Name", "Camera ${i + 1}")
-            field("cam${i}_host", "IP address (e.g. 192.168.1.50) — or paste a full rtsp:// link", "")
+            val defaultHost = when (i) {
+                0 -> "10.0.0.173"
+                1 -> "10.0.0.209"
+                else -> ""
+            }
+            field("cam${i}_host", "IP address (e.g. 192.168.1.50) — or paste a full rtsp:// link", defaultHost)
             field("cam${i}_port", "RTSP port", "554", InputType.TYPE_CLASS_NUMBER)
             field("cam${i}_user", "Username", "admin")
             field("cam${i}_pass", "Password", "",
@@ -143,7 +169,15 @@ class SettingsActivity : Activity() {
 
         val et = EditText(this)
         et.inputType = type
-        et.setText(Prefs.sp(this).getString(key, null) ?: def)
+        val saved = Prefs.sp(this).getString(key, null)
+        val initial = when (key) {
+            "cam0_host" -> if (saved == null || saved.isBlank() || saved == "10.0.0.73" || saved == "localhost" || saved == "127.0.0.1") "10.0.0.173" else saved
+            "cam1_host" -> if (saved == null || saved.isBlank() || saved == "localhost" || saved == "127.0.0.1") "10.0.0.209" else saved
+            "cam0_main", "cam1_main" -> if (saved == null || saved.isBlank() || saved == "/11") "/live/ch0" else saved
+            "cam0_sub", "cam1_sub" -> if (saved == null || saved.isBlank() || saved == "/12") "/live/ch1" else saved
+            else -> saved ?: def
+        }
+        et.setText(initial)
         if (lines > 1) {
             et.minLines = lines
             et.setSingleLine(false)
