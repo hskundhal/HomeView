@@ -1,51 +1,65 @@
 # Home View
 
-An Android 10+ tablet app that shows 4 CamHi cameras live in a 2×2 grid, with a floating, transparent Brampton weather and Google Calendar box.
+An Android 10+ tablet & dashboard app that displays live security camera feeds (supporting both **H.264** and **H.265/HEVC** via LibVLC) in a 2×2 grid, overlaid with a floating, transparent Brampton weather widget and Google Calendar events.
 
-## 1. Build the APK (free, about 5 minutes)
+![HomeView Screenshot](screenshot.png)
 
-### Option A: GitHub (no software to install)
+---
 
-1. Sign in at github.com (a free account is fine), click **New repository**, name it `HomeView`, choose **Private**, and click **Create**.
-2. On the new repo page, click **uploading an existing file**. Drag in **everything inside** the `HomeView` folder, then click **Commit changes**.
-   - The `.github` folder is hidden on a Mac. In Finder, press **Cmd + Shift + .** to show it before dragging.
-   - If it still doesn't upload: click **Add file → Create new file**, name it `.github/workflows/build.yml`, paste in the contents of that file from this folder, and commit.
-3. Open the **Actions** tab. The **Build APK** job runs on its own and takes 3–5 minutes. If it doesn't start, click **Build APK → Run workflow**.
-4. When it shows a green tick, open the run and download **HomeView-apk** under *Artifacts*. Unzip it to get `app-debug.apk`.
+## Features
+
+- **2×2 Live Camera Grid**: Tap any camera to view full-screen HD, or tap again to return to the grid.
+- **Smart RTSP Auto-Discovery**: Automatically tests and falls back through standard IP camera stream paths (`/live/ch0`, `/11`, `/stream1`, `/onvif1`, etc.) to guarantee connection.
+- **LibVLC Engine**: Natively supports both H.264 and H.265/HEVC RTSP video streams.
+- **Weather & Calendar Overlay**: Real-time Open-Meteo weather updates and upcoming Google Calendar iCal events.
+- **Draggable & Persistent Weather Box**: Drag the weather widget to any corner; it snaps and remembers your preferred corner.
+- **Kiosk & Boot Mode**: Can be set as the default launcher home screen to boot straight on power-up.
+
+---
+
+## 1. Setup & Configuration
+
+- **Settings Access**: Opens automatically on first launch. Afterwards, **long-press any camera tile** (or the weather box) to open settings.
+- **Top & Bottom Save Buttons**: Save settings instantly from the top or bottom of the form.
+- **Cameras**: 
+  - Default IP addresses (`10.0.0.173` and `10.0.0.209` for Cameras 1 & 2).
+  - RTSP Port: `554`.
+  - Username / Password: leave blank if anonymous access / RTSP Permission check is off, or enter your camera credentials.
+- **Google Calendar**: Paste your Secret iCal address (from Google Calendar settings → Integrate calendar), one link per line.
+- **Weather Location**: Latitude/Longitude (Brampton, ON by default).
+
+---
+
+## 2. Building the APK
+
+### Option A: GitHub Actions (Free & Cloud-built)
+1. Push your project to a GitHub repository.
+2. Go to the **Actions** tab on GitHub. The **Build and Release APK** workflow runs automatically on every push.
+3. Once completed (green check), download the **HomeView-apk** artifact from the workflow run to get `app-debug.apk`.
 
 ### Option B: Android Studio
+Open the project in Android Studio and select **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
 
-Open this folder in Android Studio, wait for it to sync, then choose **Build → Build App Bundle(s) / APK(s) → Build APK(s)**.
+---
 
-## 2. Install on the tablet
+## 3. Publishing & Releasing APKs on GitHub
 
-Copy `app-debug.apk` to the tablet (USB, Google Drive or email), tap it, and allow **Install unknown apps** when Android asks.
+To automatically publish a compiled APK as a downloadable **GitHub Release**:
 
-## 3. Set up
+1. Create and push a version tag (e.g., `v1.0.0`) from your terminal:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+2. GitHub Actions will automatically compile the APK and publish a **GitHub Release** under your repository's **Releases** page, attaching `app-debug.apk` with auto-generated release notes for your users to download directly.
 
-The settings screen opens on first launch. Afterwards, **long-press any camera** (or the weather box) to get back to it.
+---
 
-- **Cameras:** enter each camera's IP address, username and password. The defaults suit most CamHi cameras:
-  - port `554`
-  - HD stream `/11` (used in full screen)
-  - low-res stream `/12` (used in the grid)
+## 4. Installation & Troubleshooting
 
-  You can also paste a full `rtsp://...` link into the IP field.
-- **Google Calendar:** in Google Calendar on a computer, open **Settings → your calendar → Integrate calendar** and copy **Secret address in iCal format**. Paste it here, one link per line. Keep this link private.
-- **Weather location:** Brampton by default.
-- **Use as home screen:** tick this and pick **Home View** as the default home app. The tablet then opens straight into it after a restart and whenever Home is pressed. To leave, long-press a camera and use **Open Android settings** or **Choose default home app**.
-
-## Using it
-
-- **Tap a camera:** it goes full screen in HD. Tap again (or press Back) to return to the grid.
-- **Drag the weather box:** it snaps to the nearest corner and remembers that corner.
-- **Weather:** refreshes every 10 minutes. **Calendar:** refreshes every 15 minutes.
-- **Screen:** stays on, with no status bar or navigation bar.
-
-## Troubleshooting
-
-- **"Offline · retrying":**
-  - Check the IP address, password and port. Make sure the camera works in the CamHi app on the same Wi-Fi.
-  - Some models use `/12` and `/13`, or `/live/ch0` and `/live/ch1`, as their stream paths.
-- **Black or stuttering video in the grid:** the tablet may not handle 4 HD streams. Make sure the grid uses the low-res stream (`/12`).
-- **No events:** check that the iCal link ends in `.ics` and that the tablet's date and time zone are correct.
+- **Install**: Copy `app-debug.apk` to your tablet, tap to install, and allow **Install unknown apps** when prompted.
+- **"Offline · retrying"**: 
+  - Ensure your tablet is on the same local network as your cameras.
+  - Verify the camera's IP address (e.g., `10.0.0.173`).
+  - Ensure **RTSP Permission check** on the camera matches whether you entered credentials in the app.
+  - Make sure your camera uses H.264 or H.265 video encoding.
